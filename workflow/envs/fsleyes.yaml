@@ -1,0 +1,6 @@
+name: fsleyes
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - fsleyes

@@ -1,0 +1,252 @@
+import pandas as pd
+metadata = pd.read_csv("resources/metadata.csv", dtype={'subject_id': str})
+TRACTSEG_LICENSE = "aca_3HHRRAITHIDYWI"
+VERTEBRAL_LEVELS = [
+    "C1", "C2", "C3", "C4", "C5", "C6", "C7", 
+    "T1", "T2", "T3", "T4", "T5", "T6", "T7", "T8", "T9", "T10", "T11", "T12", 
+    "L1", "L2", "L3", "L4", "L5"]
+
+
+rule run_muscle_segmentation_standard:
+    input:
+        mr_scan = "resources/{subject_id}/{sequence}.nii.gz"
+    output:
+        directory("results/{subject_id}/{sequence}/segmentations")
+    params:
+        license = TRACTSEG_LICENSE
+    singularity:
+        "docker://wasserth/totalsegmentator:2.5.0"
+    shell:
+        """
+        totalseg_set_license -l {params.license} && \
+        TotalSegmentator \
+            -i {input.mr_scan} \
+            -o {output} \
+            --task tissue_types_mr
+        """
+
+rule run_muscle_segmentation_4_types:
+    input:
+        mr_scan = "resources/{subject_id}/{sequence}.nii.gz"
+    output:
+        directory("results/{subject_id}/{sequence}/segmentations_4_types")
+    params:
+        license = TRACTSEG_LICENSE
+    singularity:
+        "docker://wasserth/totalsegmentator:2.5.0"
+    shell:
+        """
+        totalseg_set_license -l {params.license} && \
+        TotalSegmentator \
+            -i {input.mr_scan} \
+            -o {output} \
+            --task tissue_4_types
+        """
+
+rule run_vertebrae_level_segmentation:
+    input:
+        mr_scan = "resources/{subject_id}/{sequence}.nii.gz"
+    output:
+        directory("results/{subject_id}/{sequence}/segmentations_vertebrae_level")
+    params:
+        license = TRACTSEG_LICENSE
+    singularity:
+        "docker://wasserth/totalsegmentator:2.5.0"
+    shell:
+        """
+        totalseg_set_license -l {params.license} && \
+        TotalSegmentator \
+            -i {input.mr_scan} \
+            -o {output} \
+            --task vertebrae_mr
+        """
+
+rule run_vertebrae_segmentation:
+    input:
+        mr_scan = "resources/{subject_id}/{sequence}.nii.gz"
+    output:
+        directory("results/{subject_id}/{sequence}/segmentations_vertebrae")
+    params:
+        license = TRACTSEG_LICENSE
+    singularity:
+        "docker://wasserth/totalsegmentator:2.5.0"
+    shell:
+        """
+        totalseg_set_license -l {params.license} && \
+        TotalSegmentator \
+            -i {input.mr_scan} \
+            -o {output} \
+            --task total_mr \
+            --roi_subset vertebrae autochthon_left autochthon_right iliopsoas_left iliopsoas_right
+        """ # I'm also segmenting some of the muscles to check if perhaps autochton or iliopsoas segmentation works better than tissue segmentation for these
+
+rule combine_vertebral_levels:
+    input:
+        vertebral_levels_segmentations = rules.run_vertebrae_level_segmentation.output,
+        vertebral_segmentations = rules.run_vertebrae_segmentation.output
+    output:
+        "results/{subject_id}/{sequence}/segmentations_vertebrae_combined.nii.gz"
+    conda:
+        "envs/nibabel.yaml"
+    params:
+        label_level_pairs = [(VERTEBRAL_LEVELS[n], n+1) for n in range(len(VERTEBRAL_LEVELS))]
+    script:
+        "scripts/combine_vertebral_levels.py"
+
+rule run_body_segmentation:
+    input:
+        mr_scan = "resources/{subject_id}/{sequence}.nii.gz"
+    output:
+        directory("results/{subject_id}/{sequence}/segmentations_body")
+    params:
+        license = TRACTSEG_LICENSE
+    singularity:
+        "docker://wasserth/totalsegmentator:2.5.0"
+    shell:
+        """
+        totalseg_set_license -l {params.license} && \
+        TotalSegmentator \
+            -i {input.mr_scan} \
+            -o {output} \
+            --task body_mr
+        """
+
+rule collect_segmentations:
+    input:
+        muscle_segmentations = rules.run_muscle_segmentation_standard.output,
+        muscle_segmentations_4_types = rules.run_muscle_segmentation_4_types.output,
+        vertebrae_levels_segmentations = rules.run_vertebrae_level_segmentation.output,
+        vertebrae_segmentations = rules.run_vertebrae_segmentation.output,
+        body_segmentations = rules.run_body_segmentation.output
+    output:
+        "results/{subject_id}_{sequence}.txt"
+    shell:
+        "touch {output}"
+
+rule create_ensemble_mask:
+    input:
+        ip = "results/{subject_id}/ip/segmentations",
+        oop = "results/{subject_id}/oop/segmentations",
+        water = "results/{subject_id}/water/segmentations",
+        fat = "results/{subject_id}/fat/segmentations"
+    output:
+        water_oop_ensemble = "results/{subject_id}/water_oop_ensemble/segmentations/skeletal_muscle.nii.gz",
+        all_ensemble = "results/{subject_id}/all_ensemble/segmentations/skeletal_muscle.nii.gz"
+    conda:
+        "envs/nibabel.yaml"
+    script:
+        "scripts/ensemble.py"
+
+rule calculate_muscle_area_mid_l3:
+    input:
+        water = "resources/{subject_id}/water.nii.gz",
+        fat = "resources/{subject_id}/fat.nii.gz",
+        muscle_segmentation = "results/{subject_id}/{sequence}/segmentations",
+        vertebral_segmentation = "results/{subject_id}/water/segmentations_vertebrae_combined.nii.gz"
+    output:
+        muscle_area = "results/{subject_id}/{sequence}/mid_l3_surface_area.json"
+    conda:
+        "envs/nibabel.yaml"
+    script:
+        "scripts/calculate_muscle_area_mid_l3.py"
+
+
+rule visualize_mid_l3:
+    input:
+        raw_fat = "resources/{subject_id}/fat.nii.gz",
+        raw_water = "resources/{subject_id}/water.nii.gz", 
+        raw_ip = "resources/{subject_id}/ip.nii.gz",
+        raw_oop = "resources/{subject_id}/oop.nii.gz",
+        vertebral_segmentations = "results/{subject_id}/water/segmentations_vertebrae_combined.nii.gz",
+        muscle_fat = "results/{subject_id}/fat/segmentations",
+        muscle_water = "results/{subject_id}/water/segmentations",
+        muscle_ip = "results/{subject_id}/ip/segmentations", 
+        muscle_oop = "results/{subject_id}/oop/segmentations",
+        water_oop_ensemble = "results/{subject_id}/water_oop_ensemble/segmentations/skeletal_muscle.nii.gz",
+        all_ensemble = "results/{subject_id}/all_ensemble/segmentations/skeletal_muscle.nii.gz"
+    output:
+        segmentation = "results/{subject_id}_mid_l3_segmentation.pdf",
+        fat_fraction = "results/{subject_id}_mid_l3_fat_fraction.pdf"
+    params:
+        height = lambda wildcards: metadata[metadata["subject_id"] == wildcards.subject_id]["height"].values[0]
+    conda:
+        "envs/nibabel.yaml"
+    script:
+        "scripts/visualize_mid_l3.py"
+
+
+rule calculate_all_muscle_segmentations_for_all_patients:
+    input:
+        expand("results/{subject_id}/{sequence}/segmentations", subject_id=metadata["subject_id"], sequence=["water", "fat", "ip", "oop"])
+    output:
+        "results/tmp/calculate_all_muscle_segmentations_for_all_patients.txt"
+    shell:
+        "touch {output}"
+
+rule calculate_vertebral_segmentations_for_all_patients:
+    input:
+        expand("results/{subject_id}/water/segmentations_vertebrae_combined.nii.gz", subject_id=metadata["subject_id"])
+    output:
+        "results/tmp/calculate_vertebral_segmentations_for_all_patients.txt"
+    shell:
+        "touch {output}"
+
+rule visualize_all_patients:
+    input:
+        segmentations = expand("results/{subject_id}_mid_l3_segmentation.pdf", subject_id=metadata["subject_id"]),
+        fat_fractions = expand("results/{subject_id}_mid_l3_fat_fraction.pdf", subject_id=metadata["subject_id"])
+    output:
+        directory("results/mid_l3_plots")
+    shell:
+        """
+        mkdir -p {output}
+        cp {input.segmentations} {output}/
+        cp {input.fat_fractions} {output}/
+        """
+
+# TODO: I'm using two segmentations but should've used combined vertebral levels segmentation, will need to fix that
+# The order is from bottom to the top, so starting segmentation is the bottom one and end segmentation is the top one
+rule calculate_volume_and_fat_fraction_between_L1_and_L3:
+    input:
+        muscle_segmentation = "results/{subject_id}/{sequence}/segmentations/skeletal_muscle.nii.gz",
+        start_segmentation = "results/{subject_id}/water/segmentations_vertebrae_level/vertebrae_L3.nii.gz",
+        end_segmentation = "results/{subject_id}/water/segmentations_vertebrae_level/vertebrae_L1.nii.gz",
+        ip_image = "resources/{subject_id}/fat.nii.gz",
+        oop_image = "resources/{subject_id}/water.nii.gz"
+    output:
+        muscle_volume = "results/{subject_id}/{sequence}/volumes_between_L1_and_L3.json",
+        cropped_muscle = "results/{subject_id}/{sequence}/cropped_volume_muscle.nii.gz",
+        fat_fraction = "results/{subject_id}/{sequence}/fat_fraction.nii.gz"
+    conda:
+        "envs/nibabel.yaml"
+    script:
+        "scripts/calculate_volume_until_structure.py"
+
+rule combine_volumes_and_areas_for_all_patients:
+    input:
+        volumes = expand("results/{subject_id}/{sequence}/volumes_between_L1_and_L3.json", subject_id=metadata["subject_id"], sequence=["water", "fat", "ip", "oop"]),
+        areas = expand("results/{subject_id}/{sequence}/mid_l3_surface_area.json", subject_id=metadata["subject_id"], sequence=["water", "fat", "ip", "oop"])
+    params:
+        metadata = metadata
+    output:
+        "results/volumes_and_areas.json"
+    script:
+        "scripts/combine_areas_and_volumes.py"
+
+rule display_segmentations_muscles_vertebrae:
+    input:
+        raw_file = "resources/{subject_id}/{sequence}.nii.gz",
+        muscle_segmentation_dir = "results/{subject_id}/{sequence}/segmentations",
+        combined_vertebral_levels_segmentation = "results/{subject_id}/{sequence}/segmentations_vertebrae_combined.nii.gz",
+        body_segmentation_dir = "results/{subject_id}/{sequence}/segmentations_body"
+    conda:
+        "envs/fsleyes.yaml"
+    output:
+        "results/visualizations/temp/display_segmentations_muscle_vertebrae_{subject_id}_{sequence}.txt"
+    shell:
+        """
+        fsleyes {input.raw_file} \
+        {input.muscle_segmentation_dir}/skeletal_muscle.nii.gz -cm red -a 50 \
+        {input.body_segmentation_dir}/body_extremities.nii.gz -cm blue -a 50 \
+        {input.combined_vertebral_levels_segmentation} -cm cool -a 50
+        """

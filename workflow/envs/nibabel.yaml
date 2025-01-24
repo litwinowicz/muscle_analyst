@@ -1,0 +1,6 @@
+name: nibabel
+channels:
+  - conda-forge
+dependencies:
+  - nibabel
+  - matplotlib
