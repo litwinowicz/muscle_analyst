@@ -91,43 +91,65 @@ for i, area in enumerate(muscle_areas):
             horizontalalignment='center',
             transform=ax.transAxes)
 
-plt.savefig(snakemake.output["segmentation"], format='pdf', bbox_inches='tight', dpi=300)
+plt.savefig(snakemake.output["segmentation"], format='png', bbox_inches='tight', dpi=300)
 plt.close()
 
-fig2, axs = plt.subplots(2, 3, figsize=(20, 12))
+
+fig2, (ax1, ax2, ax3) = plt.subplots(1, 3, figsize=(20, 6))
 plt.subplots_adjust(wspace=0.02)
 
+# Get the data for middle L3 slice
 fat_data = fat.get_fdata()[:, :, middle_idx]
 water_data = water.get_fdata()[:, :, middle_idx]
+muscle_data = all_ensemble.get_fdata()[:, :, middle_idx].astype(bool)
 
-segmentations = [fat_muscle, water_oop_ensemble, all_ensemble]
-titles = ['Original Segmentation', 'Water-OOP Ensemble', 'All Ensemble']
+# Calculate fat fraction using imported function
+fat_fraction, stats = calculate_fat_fraction(fat_data, water_data, muscle_data)
 
-for i, (seg, title) in enumerate(zip(segmentations, titles)):
-    muscle_data = seg.get_fdata()[:, :, middle_idx].astype(bool)
-    fat_fraction, stats = calculate_fat_fraction(fat_data, water_data, muscle_data)
+# Flip the data for consistent orientation
+fat_data = np.flip(np.flip(fat_data.T, 0), 1)
+fat_fraction = np.flip(np.flip(fat_fraction.T, 0), 1)
+muscle_data = np.flip(np.flip(muscle_data.T, 0), 1)
 
-    fat_data_flip = np.flip(np.flip(fat_data.T, 0), 1)
-    fat_fraction = np.flip(np.flip(fat_fraction.T, 0), 1)
-    muscle_data = np.flip(np.flip(muscle_data.T, 0), 1)
+# Plot original fat image
+ax1.imshow(fat_data, cmap='gray')
+ax1.set_title('Original Fat Image')
+ax1.set_xticks([])
+ax1.set_yticks([])
 
-    row = i // 3
-    col = i % 3
-    ax = axs[row, col]
-    
-    ax.imshow(fat_data_flip, cmap='gray')
-    masked_ff = np.ma.masked_where(~muscle_data, fat_fraction)
-    im = ax.imshow(masked_ff, cmap='hot', alpha=0.7, vmin=0, vmax=1)
-    ax.set_title(f'{title}\nMean FF: {stats["mean_fat_fraction"]:.3f}')
-    ax.set_xticks([])
-    ax.set_yticks([])
+# Plot fat fraction overlay
+ax2.imshow(fat_data, cmap='gray')
+masked_ff = np.ma.masked_where(~muscle_data, fat_fraction)
+im2 = ax2.imshow(masked_ff, cmap='hot', alpha=0.7, vmin=0, vmax=1)
+ax2.set_title('Fat Fraction Overlay')
+ax2.set_xticks([])
+ax2.set_yticks([])
 
-# Add colorbar
-cbar_ax = fig2.add_axes([0.92, 0.15, 0.02, 0.7])
-cbar = plt.colorbar(im, cax=cbar_ax)
+# Plot fat fraction overlay alone
+im3 = ax3.imshow(masked_ff, cmap='hot', vmin=0, vmax=1)
+ax3.set_title('Fat Fraction Only')
+ax3.set_xticks([])
+ax3.set_yticks([])
+
+# Add colorbar with adjusted position
+cbar_ax = fig2.add_axes([0.92, 0.15, 0.02, 0.7])  # [left, bottom, width, height]
+cbar = plt.colorbar(im3, cax=cbar_ax)
 cbar.set_label('Fat Fraction')
+
+# Add statistics text with adjusted position
+stats_text = f'Mean FF: {stats["mean_fat_fraction"]:.3f}\n'
+stats_text += f'Median FF: {stats["median_fat_fraction"]:.3f}\n'
+stats_text += f'Std FF: {stats["std_fat_fraction"]:.3f}'
+# Position the text to the right of the colorbar
+fig2.text(0.97, 0.7, stats_text, 
+          bbox=dict(facecolor='white', alpha=0.8),
+          transform=fig2.transFigure)
+
+# Make sure all subplots have the same size
+for ax in [ax1, ax2, ax3]:
+    ax.set_aspect('equal')
 
 # Save second visualization
 plt.savefig(snakemake.output["fat_fraction"], 
-            format='pdf', bbox_inches='tight', dpi=300)
+            format='png', bbox_inches='tight', dpi=300)
 plt.close()

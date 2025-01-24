@@ -25,7 +25,7 @@ def process_files(volume_files, area_files, metadata_df):
         subject_id = row['subject_id']
         height = row['height']
         
-        for sequence in ['water', 'fat', 'ip', 'oop']:
+        for sequence in ['water', 'fat', 'ip', 'oop', 'all_ensemble', 'water_oop_ensemble']:
             # Initialize all values to None
             data = {
                 'subject_id': subject_id,
@@ -88,10 +88,10 @@ metadata_df = snakemake.params["metadata"]
 results_df = process_files(volume_files, area_files, metadata_df)
 
 # Save to CSV
-csv_output = str(snakemake.output[0]).replace('.json', '.csv')
+csv_output = str(snakemake.output["csv"])
 results_df.to_csv(csv_output, index=False)
 
 # Save to JSON as required by snakemake
 results_dict = results_df.to_dict(orient='records')
-with open(snakemake.output[0], 'w') as f:
+with open(snakemake.output["json"], 'w') as f:
     json.dump(results_dict, f, indent=2)

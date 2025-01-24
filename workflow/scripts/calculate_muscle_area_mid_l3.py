@@ -4,7 +4,10 @@ import json
 
 # Load files
 vert_seg = nib.load(snakemake.input["vertebral_segmentation"])
-muscle = nib.load(snakemake.input["muscle_segmentation"] + '/skeletal_muscle.nii.gz')
+muscle_path = snakemake.input["muscle_segmentation"]
+if not muscle_path.endswith('skeletal_muscle.nii.gz'):
+    muscle_path = muscle_path + '/skeletal_muscle.nii.gz'
+muscle = nib.load(muscle_path)
 water_img = nib.load(snakemake.input["water"])
 fat_img = nib.load(snakemake.input["fat"])
 

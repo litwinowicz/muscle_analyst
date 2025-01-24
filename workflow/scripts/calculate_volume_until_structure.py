@@ -77,7 +77,7 @@ def process_muscle_segmentation(
     muscle_seg_nii = nib.load(muscle_segmentation_path)
     muscle_seg_data = muscle_seg_nii.get_fdata()
     voxel_dims = muscle_seg_nii.header.get_zooms()
-    
+
     # Load and validate IP/OOP images if provided
     calculate_ff = False
     if ip_image_path is not None or oop_image_path is not None:

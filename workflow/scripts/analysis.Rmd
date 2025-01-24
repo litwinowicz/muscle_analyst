@@ -1,0 +1,134 @@
+---
+title: "Analysis"
+output:
+  pdf_document:
+    toc: true
+    toc_depth: 2
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = FALSE,
+  warning = FALSE,
+  message = FALSE,
+  fig.width = 10,
+  fig.height = 6
+)
+
+library(dplyr)
+library(ggplot2)
+library(gridExtra)
+```
+
+
+```{r load-data}
+data <- read.csv(snakemake@input[[1]])
+```
+
+# Summary Statistics
+
+## By Sequence
+
+```{r sequence-summary}
+sequence_summary <- data %>%
+  group_by(sequence) %>%
+  summarise(
+    mean_muscle_area = round(mean(muscle_area, na.rm = TRUE), 2),
+    mean_original_volume = round(mean(original_volume, na.rm = TRUE), 2),
+    mean_cropped_volume = round(mean(cropped_volume, na.rm = TRUE), 2),
+    mean_volume_fat = round(mean(volume_mean_fat_fraction, na.rm = TRUE), 2),
+    mean_volume_median_fat = round(mean(volume_median_fat_fraction, na.rm = TRUE), 2),
+    mean_volume_std_fat = round(mean(volume_std_fat_fraction, na.rm = TRUE), 2),
+    mean_area_fat = round(mean(area_mean_fat_fraction, na.rm = TRUE), 2),
+    mean_area_median_fat = round(mean(area_median_fat_fraction, na.rm = TRUE), 2),
+    mean_area_std_fat = round(mean(area_std_fat_fraction, na.rm = TRUE), 2)
+  )
+
+knitr::kable(t(sequence_summary), 
+             caption = "Summary Statistics by Sequence",
+             digits = 2)
+```
+
+## By Patient
+
+```{r patient-summary}
+patient_summary <- data %>%
+  group_by(subject_id) %>%
+  summarise(
+    mean_muscle_area = round(mean(muscle_area, na.rm = TRUE), 2),
+    mean_original_volume = round(mean(original_volume, na.rm = TRUE), 2),
+    mean_cropped_volume = round(mean(cropped_volume, na.rm = TRUE), 2),
+    mean_volume_fat = round(mean(volume_mean_fat_fraction, na.rm = TRUE), 2),
+    mean_volume_median_fat = round(mean(volume_median_fat_fraction, na.rm = TRUE), 2),
+    mean_volume_std_fat = round(mean(volume_std_fat_fraction, na.rm = TRUE), 2),
+    mean_area_fat = round(mean(area_mean_fat_fraction, na.rm = TRUE), 2),
+    mean_area_median_fat = round(mean(area_median_fat_fraction, na.rm = TRUE), 2),
+    mean_area_std_fat = round(mean(area_std_fat_fraction, na.rm = TRUE), 2)
+  )
+
+knitr::kable(t(patient_summary), 
+             caption = "Summary Statistics by Patient",
+             digits = 2)
+```
+
+# Sequence-Specific Correlations
+
+```{r sequence-correlations, fig.height=15}
+plot_correlations <- function(data, sequence_name) {
+  sequence_data <- data %>% filter(sequence == sequence_name)
+
+  cor_area_volume <- cor.test(sequence_data$muscle_area, sequence_data$cropped_volume)
+  cor_fat_fractions <- cor.test(sequence_data$area_mean_fat_fraction, sequence_data$volume_mean_fat_fraction)
+  
+  p1 <- ggplot(sequence_data, aes(x = muscle_area, y = cropped_volume)) +
+    geom_point(alpha = 0.6) +
+    geom_smooth(method = "lm", color = "red") +
+    theme_minimal() +
+    labs(
+      title = paste("Sequence:", sequence_name),
+      subtitle = paste("r =", round(cor_area_volume$estimate, 3),
+                      ", p =", round(cor_area_volume$p.value, 4)),
+      x = "Muscle Area",
+      y = "Cropped Volume"
+    )
+  
+  p2 <- ggplot(sequence_data, aes(x = area_mean_fat_fraction, y = volume_mean_fat_fraction)) +
+    geom_point(alpha = 0.6) +
+    geom_smooth(method = "lm", color = "red") +
+    theme_minimal() +
+    labs(
+      title = paste("Sequence:", sequence_name),
+      subtitle = paste("r =", round(cor_fat_fractions$estimate, 3),
+                      ", p =", round(cor_fat_fractions$p.value, 4)),
+      x = "Area Mean Fat Fraction",
+      y = "Volume Mean Fat Fraction"
+    )
+  
+  return(list(p1, p2))
+}
+
+sequences <- unique(data$sequence)
+all_plots <- lapply(sequences, function(seq) {
+  plot_correlations(data, seq)
+})
+plot_list <- unlist(all_plots, recursive = FALSE)
+
+gridExtra::grid.arrange(grobs = plot_list, ncol = 2)
+```
+
+# Correlation Summary Table
+
+```{r correlation-summary}
+correlation_summary <- data %>%
+  group_by(sequence) %>%
+  summarise(
+    area_volume_cor = cor(muscle_area, cropped_volume),
+    fat_fractions_cor = cor(area_mean_fat_fraction, volume_mean_fat_fraction),
+    area_volume_r2 = cor(muscle_area, cropped_volume)^2,
+    fat_fractions_r2 = cor(area_mean_fat_fraction, volume_mean_fat_fraction)^2
+  )
+
+knitr::kable(correlation_summary,
+             caption = "Correlation Summary by Sequence",
+             digits = 3)
+```
