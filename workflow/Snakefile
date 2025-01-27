@@ -1,6 +1,10 @@
 import pandas as pd
+import os
 metadata = pd.read_csv("resources/metadata.csv", dtype={'subject_id': str})
-TOTALSEGMENTATOR_LICENSE = "aca_3HHRRAITHIDYWI"
+
+envvars:
+    "TOTALSEGMENTATOR_LICENSE"
+TOTALSEGMENTATOR_LICENSE = os.environ["TOTALSEGMENTATOR_LICENSE"]
 VERTEBRAL_LEVELS = [
     "C1", "C2", "C3", "C4", "C5", "C6", "C7", 
     "T1", "T2", "T3", "T4", "T5", "T6", "T7", "T8", "T9", "T10", "T11", "T12", 

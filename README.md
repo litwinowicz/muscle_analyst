@@ -6,7 +6,7 @@ This Snakemake pipeline performs automated segmentation and analysis of medical 
 
 - Snakemake
 - Singularity/Docker
-- TotalSegmentator license (specified in config as `TOTALSEGMENTATOR_LICENSE`)
+- TotalSegmentator license (specified in as `TOTALSEGMENTATOR_LICENSE` environment variable)
 - RMarkdown
 
 
@@ -74,7 +74,7 @@ Intermediate results are stored for each subject and sequence in the `results/{s
 ## Usage
 
 1. Ensure your input data is properly organized in the `resources/` directory
-2. Configure your TotalSegmentator license in the Snakefile
+2. Set the `TOTALSEGMENTATOR_LICENSE` environment variable
 3. Run the pipeline:
    ```
    snakemake -c 1 --use-conda --use-singularity -p "results/tmp/calculate_all_muscle_segmentations_for_all_patients.txt"
