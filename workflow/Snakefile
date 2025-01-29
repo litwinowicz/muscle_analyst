@@ -13,7 +13,9 @@ VERTEBRAL_LEVELS = [
 wildcard_constraints:
     subject_id="[^/]+",
     sequence="[^/]+"
-rule run_muscle_segmentation_standard:
+
+# TODO: Use file-based output instead of directory
+rule run_muscle_segmentation_standard_old:
     input:
         mr_scan = "resources/{subject_id}/{sequence}.nii.gz"
     output:
@@ -31,6 +33,24 @@ rule run_muscle_segmentation_standard:
             --task tissue_types_mr
         """
 
+rule run_muscle_segmentation_standard:
+    input:
+        mr_scan = "resources/{subject_id}/{sequence}.nii.gz"
+    output:
+        "results/{subject_id}/{sequence}/segmentations/skeletal_muscle.nii.gz"
+    params:
+        license = TOTALSEGMENTATOR_LICENSE
+    singularity:
+        "docker://wasserth/totalsegmentator:2.5.0"
+    shell:
+        """
+        totalseg_set_license -l {params.license} && \
+        TotalSegmentator \
+            -i {input.mr_scan} \
+            -o $(dirname {output}) \
+            --task tissue_types_mr
+        """
+# TODO: Use file-based output instead of directory
 rule run_muscle_segmentation_4_types:
     input:
         mr_scan = "resources/{subject_id}/{sequence}.nii.gz"
@@ -49,6 +69,7 @@ rule run_muscle_segmentation_4_types:
             --task tissue_4_types
         """
 
+# TODO: Use file-based output instead of directory
 rule run_vertebrae_level_segmentation:
     input:
         mr_scan = "resources/{subject_id}/{sequence}.nii.gz"
@@ -67,6 +88,7 @@ rule run_vertebrae_level_segmentation:
             --task vertebrae_mr
         """
 
+# TODO: Use file-based output instead of directory
 rule run_vertebrae_segmentation:
     input:
         mr_scan = "resources/{subject_id}/{sequence}.nii.gz"
@@ -86,10 +108,41 @@ rule run_vertebrae_segmentation:
             --roi_subset vertebrae autochthon_left autochthon_right iliopsoas_left iliopsoas_right
         """ # I'm also segmenting some of the muscles to check if perhaps autochton or iliopsoas segmentation works better than tissue segmentation for these
 
-rule combine_vertebral_levels:
+rule run_disc_segmentation:
+    input:
+        mr_scan = "resources/{subject_id}/{sequence}.nii.gz"
+    output:
+        "results/{subject_id}/{sequence}/segmentations/intervertebral_discs.nii.gz"
+    params:
+        license = TOTALSEGMENTATOR_LICENSE
+    singularity:
+        "docker://wasserth/totalsegmentator:2.5.0"
+    shell:
+        """
+        totalseg_set_license -l {params.license} && \
+        TotalSegmentator \
+            -i {input.mr_scan} \
+            -o $(dirname {output}) \
+            --task total_mr \
+            --roi_subset intervertebral_discs
+        """
+
+rule combine_vertebral_levels_old:
     input:
         vertebral_levels_segmentations = rules.run_vertebrae_level_segmentation.output,
         vertebral_segmentations = rules.run_vertebrae_segmentation.output
+    output:
+        "results/{subject_id}/{sequence}/segmentations_vertebrae_combined_old.nii.gz"
+    conda:
+        "envs/nibabel.yaml"
+    params:
+        label_level_pairs = [(VERTEBRAL_LEVELS[n], n+1) for n in range(len(VERTEBRAL_LEVELS))]
+    script:
+        "scripts/combine_vertebral_levels_old.py"
+
+rule combine_vertebral_levels:
+    input:
+        vertebral_levels_segmentations = rules.run_vertebrae_level_segmentation.output
     output:
         "results/{subject_id}/{sequence}/segmentations_vertebrae_combined.nii.gz"
     conda:
@@ -98,6 +151,29 @@ rule combine_vertebral_levels:
         label_level_pairs = [(VERTEBRAL_LEVELS[n], n+1) for n in range(len(VERTEBRAL_LEVELS))]
     script:
         "scripts/combine_vertebral_levels.py"
+
+
+rule determine_spine_curvature:
+    input:
+        combined_vertebral_levels = "results/{subject_id}/{sequence}/segmentations_vertebrae_combined.nii.gz",
+        discs = "results/{subject_id}/{sequence}/segmentations/intervertebral_discs.nii.gz"
+    output:
+        "results/{subject_id}/{sequence}/spine_curvature.nii.gz"
+    conda:
+        "envs/nibabel.yaml"
+    script:
+        "scripts/extract_anterior_curvature.py"
+
+rule get_vertebral_levels:
+    input:
+        combined_vertebral_levels = "results/{subject_id}/{sequence}/segmentations_vertebrae_combined.nii.gz",
+        spine_curvature = "results/{subject_id}/{sequence}/spine_curvature.nii.gz"
+    output:
+        "results/{subject_id}/{sequence}/vertebral_levels.nii.gz"
+    conda:
+        "envs/nibabel.yaml"
+    script:
+        "scripts/get_vertebral_levels.py"
 
 rule run_body_segmentation:
     input:

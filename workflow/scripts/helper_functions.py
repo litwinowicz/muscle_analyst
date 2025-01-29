@@ -1,6 +1,7 @@
 import numpy as np
 from typing import Tuple, Dict
 from numpy.typing import NDArray
+import nibabel as nib
 
 def calculate_volume(segmentation_data: np.ndarray, voxel_dims: Tuple[float, ...]) -> float:
     """
@@ -67,3 +68,23 @@ def calculate_fat_fraction(
     }
     
     return fat_fraction, stats
+
+
+def reorient_to_ras(img: nib.Nifti1Image) -> nib.Nifti1Image:
+    """
+    Reorients a NIfTI image to RAS orientation if not already in RAS.
+    
+    Args:
+        img: Input NIfTI image
+        
+    Returns:
+        NIfTI image in RAS orientation
+    """
+    orientation: Tuple[str, str, str] = nib.aff2axcodes(img.affine)
+    
+    if orientation != ('R', 'A', 'S'):
+        print(f"Expected RAS orientation, got {orientation}")
+        print(f"Reorienting image from {orientation} to RAS")
+        img = nib.as_closest_canonical(img)
+    
+    return img
