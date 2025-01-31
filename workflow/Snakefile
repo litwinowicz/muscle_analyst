@@ -175,6 +175,85 @@ rule get_vertebral_levels:
     script:
         "scripts/get_vertebral_levels.py"
 
+rule muscle_area_at_all_vertebral_levels:
+    input:
+        volume = "resources/{subject_id}/{sequence}.nii.gz",
+        muscle_mask = "results/{subject_id}/{sequence}/segmentations/skeletal_muscle.nii.gz",
+        vertebral_mask = "results/{subject_id}/{sequence}/vertebral_levels.nii.gz"
+    output:
+        image_output_dir = directory("results/{subject_id}/{sequence}/muscle_areas_images"),
+        csv_output = "results/{subject_id}/{sequence}/muscle_areas.csv"
+    conda:
+        "envs/nibabel.yaml"
+    params:
+        vertebral_levels = VERTEBRAL_LEVELS
+    script:
+        "scripts/muscle_area_at_all_vertebral_levels.py"
+
+rule combine_muscle_areas_for_all_patients:
+    input:
+        expand("results/{subject_id}/{{sequence}}/muscle_areas.csv", subject_id=metadata["subject_id"])
+    output:
+        "results/{sequence}_combined_muscle_areas.csv"
+    shell:
+        """
+        head -n 1 {input[0]} > {output} && \
+        tail -n +2 -q {input} >> {output}
+        """
+
+rule muscle_areas_plot:
+    input:
+        muscle_areas = "results/{sequence}_combined_muscle_areas.csv"
+    output:
+        "results/{sequence}_combined_muscle_areas_plot.pdf"
+    script:
+        "scripts/generate_muscle_area_plot.R"
+
+
+rule calculate_volume:
+    input:
+        muscle_segmentation = "results/{subject_id}/{sequence}/segmentations/skeletal_muscle.nii.gz",
+    output:
+        muscle_volume = "results/{subject_id}/{sequence}/volumes.json"
+    conda:
+        "envs/nibabel.yaml"
+    script:
+        "scripts/calculate_volume_until_structure.py"
+
+
+rule combine_volumes_for_all_patients:
+    input:
+        volumes = expand("results/{subject_id}/{{sequence}}/volumes.json", subject_id=metadata["subject_id"])
+    output:
+        "results/{sequence}_combined_volumes.csv"
+    shell:
+        """
+        echo "subject_id,original_volume" > {output} && 
+        for f in {input.volumes}; do
+            subject_id=$(echo "$f" | sed -E 's/.*results\/([^/]+)\/.*/\\1/') && 
+            volume=$(jq -r .original_volume_cm3 "$f") && 
+            echo "$subject_id,$volume" >> {output}
+        done
+        """
+
+rule calculate_area_volume_correlations:
+    input:
+        areas = "results/combined_muscle_areas.csv",
+        volumes = "results/{sequence}_combined_volumes.csv"
+    output:
+        "results/{sequence}_area_volume_correlations.pdf"
+    script:
+        "scripts/area_volume_correlations.R"
+
+rule calculate_muscle_areas_for_all_patients:
+    input:
+        expand("results/{subject_id}/fat/muscle_areas_images", subject_id=metadata["subject_id"])
+    output:
+        "results/tmp/calculate_muscle_areas_for_all_patients.txt"
+    shell:
+        "touch {output}"
+
+
 rule run_body_segmentation:
     input:
         mr_scan = "resources/{subject_id}/{sequence}.nii.gz"
@@ -313,6 +392,8 @@ rule visualize_all_patients:
         cp {input.segmentations} {output}/
         cp {input.fat_fractions} {output}/
         """
+
+
 
 # TODO: I'm using two segmentations but should've used combined vertebral levels segmentation, will need to fix that
 # The order is from bottom to the top, so starting segmentation is the bottom one and end segmentation is the top one
